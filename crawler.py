@@ -18,9 +18,6 @@ import warnings
 import logging
 import hashlib
 import random
-import uuid
-import os
-from datetime import datetime
 from typing import Set, List, Dict, Optional, Tuple
 
 # Suppress warnings for aggressive crawling
@@ -34,232 +31,6 @@ logging.getLogger('urllib3').setLevel(logging.ERROR)
 logging.getLogger('webdriver_manager').setLevel(logging.ERROR)
 
 app = typer.Typer()
-
-class SecurityAnalyzer:
-    """Helper class for security analysis and technology detection"""
-    
-    @staticmethod
-    def detect_technology_stack(html: str, headers: Dict[str, str] = None) -> Dict[str, str]:
-        """Detect web technologies from HTML and headers"""
-        tech_stack = {
-            "web_server": None,
-            "framework": None,
-            "frontend": None,
-            "detected_cms": None
-        }
-        
-        if headers:
-            # Web server detection
-            server = headers.get('server', '').lower()
-            if 'nginx' in server:
-                tech_stack["web_server"] = "nginx"
-            elif 'apache' in server:
-                tech_stack["web_server"] = "apache"
-            elif 'iis' in server:
-                tech_stack["web_server"] = "iis"
-            
-            # Framework detection from headers
-            x_powered_by = headers.get('x-powered-by', '').lower()
-            if 'express' in x_powered_by:
-                tech_stack["framework"] = "express"
-            elif 'django' in x_powered_by:
-                tech_stack["framework"] = "django"
-            elif 'asp.net' in x_powered_by:
-                tech_stack["framework"] = "asp.net"
-        
-        # Frontend framework detection from HTML
-        html_lower = html.lower()
-        if 'ng-' in html_lower or 'angular' in html_lower or 'mat-' in html_lower:
-            tech_stack["frontend"] = "angular"
-        elif 'react' in html_lower or '_reactinternalfiber' in html_lower:
-            tech_stack["frontend"] = "react"
-        elif 'vue' in html_lower or 'v-' in html_lower:
-            tech_stack["frontend"] = "vue"
-        
-        # CMS detection
-        if 'wp-content' in html_lower or 'wordpress' in html_lower:
-            tech_stack["detected_cms"] = "wordpress"
-        elif 'drupal' in html_lower:
-            tech_stack["detected_cms"] = "drupal"
-        elif 'joomla' in html_lower:
-            tech_stack["detected_cms"] = "joomla"
-        
-        return tech_stack
-    
-    @staticmethod
-    def analyze_security_headers(headers: Dict[str, str]) -> Dict[str, str]:
-        """Analyze security headers"""
-        security_headers = {
-            "content_security_policy": "missing",
-            "x_frame_options": "missing",
-            "strict_transport_security": "missing",
-            "x_content_type_options": "missing"
-        }
-        
-        for header, value in headers.items():
-            header_lower = header.lower()
-            if header_lower == 'content-security-policy':
-                security_headers["content_security_policy"] = "present"
-            elif header_lower == 'x-frame-options':
-                security_headers["x_frame_options"] = "present"
-            elif header_lower == 'strict-transport-security':
-                security_headers["strict_transport_security"] = "present"
-            elif header_lower == 'x-content-type-options':
-                security_headers["x_content_type_options"] = "present"
-        
-        return security_headers
-    
-    @staticmethod
-    def detect_javascript_frameworks(html: str) -> List[str]:
-        """Detect JavaScript frameworks and libraries"""
-        frameworks = []
-        html_lower = html.lower()
-        
-        if 'jquery' in html_lower:
-            frameworks.append("jquery")
-        if 'angular' in html_lower or 'ng-' in html_lower:
-            frameworks.append("angular")
-        if 'react' in html_lower:
-            frameworks.append("react")
-        if 'vue' in html_lower:
-            frameworks.append("vue")
-        if 'bootstrap' in html_lower:
-            frameworks.append("bootstrap")
-        
-        return frameworks
-    
-    @staticmethod
-    def extract_external_resources(html: str, base_url: str) -> List[str]:
-        """Extract external JavaScript and CSS resources"""
-        external_resources = []
-        soup = BeautifulSoup(html, 'html.parser')
-        base_domain = urlparse(base_url).netloc
-        
-        # Find script and link tags
-        for tag in soup.find_all(['script', 'link']):
-            src = tag.get('src') or tag.get('href')
-            if src and src.startswith('http'):
-                resource_domain = urlparse(src).netloc
-                if resource_domain != base_domain:
-                    external_resources.append(src)
-        
-        return list(set(external_resources))
-    
-    @staticmethod
-    def analyze_cookies(response) -> List[Dict]:
-        """Analyze cookies for security issues"""
-        cookies = []
-        if hasattr(response, 'cookies'):
-            for cookie in response.cookies:
-                cookie_data = {
-                    "name": cookie.name,
-                    "secure": cookie.secure,
-                    "httponly": hasattr(cookie, 'httponly') and cookie.httponly,
-                    "samesite": getattr(cookie, 'samesite', None) or "none"
-                }
-                cookies.append(cookie_data)
-        return cookies
-    
-    @staticmethod
-    def assess_form_security(form: Dict, html: str) -> Dict:
-        """Assess form security features"""
-        # Check for CSRF token
-        csrf_present = False
-        csrf_patterns = [r'csrf[_-]?token', r'authenticity[_-]?token', r'_token']
-        for pattern in csrf_patterns:
-            if re.search(pattern, html, re.IGNORECASE):
-                csrf_present = True
-                break
-        
-        # Enhanced form data with security analysis
-        enhanced_inputs = []
-        for inp in form.get('inputs', []):
-            enhanced_input = {
-                "name": inp['name'],
-                "type": inp['type'],
-                "required": inp.get('required', False),
-                "validation_pattern": None,  # Could be extracted from HTML5 pattern attribute
-                "max_length": None  # Could be extracted from maxlength attribute
-            }
-            enhanced_inputs.append(enhanced_input)
-        
-        vulnerability_indicators = {
-            "no_csrf_token": not csrf_present,
-            "weak_validation": True,  # Simplified assessment
-            "autocomplete_enabled": True  # Simplified assessment
-        }
-        
-        return {
-            "form_id": f"{form.get('form_type', 'unknown')}_form_1",
-            "action": form.get('action', ''),
-            "method": form.get('method', 'GET').upper(),
-            "inputs": enhanced_inputs,
-            "csrf_protection": csrf_present,
-            "input_validation": "client_side_only",  # Simplified assessment
-            "vulnerability_indicators": vulnerability_indicators
-        }
-    
-    @staticmethod
-    def calculate_attack_surface_score(endpoint_data: Dict) -> float:
-        """Calculate attack surface score based on various factors"""
-        score = 0.0
-        
-        # Base score for having forms
-        if endpoint_data.get('forms'):
-            score += 3.0
-        
-        # Additional points for security issues
-        security_headers = endpoint_data.get('security_headers', {})
-        missing_headers = [k for k, v in security_headers.items() if v == "missing"]
-        score += len(missing_headers) * 1.5
-        
-        # Points for form vulnerabilities
-        for form in endpoint_data.get('forms', []):
-            vuln_indicators = form.get('vulnerability_indicators', {})
-            score += sum(1.0 for indicator in vuln_indicators.values() if indicator)
-        
-        # Points for insecure cookies
-        cookies = endpoint_data.get('cookies', [])
-        for cookie in cookies:
-            if not cookie.get('secure'):
-                score += 1.0
-            if not cookie.get('httponly'):
-                score += 0.5
-        
-        return min(score, 10.0)  # Cap at 10.0
-    
-    @staticmethod
-    def identify_potential_vulnerabilities(endpoint_data: Dict) -> Dict:
-        """Identify potential vulnerabilities"""
-        vulnerabilities = {
-            "missing_security_headers": [],
-            "form_issues": [],
-            "cookie_issues": []
-        }
-        
-        # Security headers
-        security_headers = endpoint_data.get('security_headers', {})
-        for header, status in security_headers.items():
-            if status == "missing":
-                header_name = header.replace('_', '-')
-                if header_name == "strict-transport-security":
-                    header_name = "hsts"
-                vulnerabilities["missing_security_headers"].append(header_name)
-        
-        # Form issues
-        for form in endpoint_data.get('forms', []):
-            vuln_indicators = form.get('vulnerability_indicators', {})
-            if vuln_indicators.get('no_csrf_token'):
-                vulnerabilities["form_issues"].append("missing_csrf")
-            if vuln_indicators.get('weak_validation'):
-                vulnerabilities["form_issues"].append("weak_validation")
-        
-        # Cookie issues
-        for cookie in endpoint_data.get('cookies', []):
-            if not cookie.get('secure'):
-                vulnerabilities["cookie_issues"].append("insecure_session_cookie")
-        
-        return vulnerabilities
 
 class AggressiveVulnCrawler:
     def __init__(self, max_pages=100, delay=0.3, timeout=10, use_selenium=True, aggressive=False, ignore_robots=False, enable_dedup=True):
@@ -291,7 +62,7 @@ class AggressiveVulnCrawler:
         self.session = requests.Session()
         self.driver = None
         
-        # Aggressive user agents for bypassing basic filters
+        # User agents for bypassing basic filters
         self.user_agents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -299,7 +70,7 @@ class AggressiveVulnCrawler:
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0'
         ]
         
-        # Setup session with aggressive settings
+        # Setup session with settings
         self.setup_session()
         
         # Initialize Selenium if needed
@@ -1020,9 +791,6 @@ class AggressiveVulnCrawler:
                     self.visited.add(current_url)
                     
                     # Fetch page content
-                    response_headers = {}
-                    cookies = []
-                    
                     if self.use_selenium and self.driver:
                         forms = self.extract_forms_selenium(current_url)
                         new_links = self.extract_links_selenium(current_url)
@@ -1030,7 +798,6 @@ class AggressiveVulnCrawler:
                         status_code = 200
                         content_type = "text/html"
                         html = self.driver.page_source
-                        # Note: Selenium doesn't provide easy access to response headers
                     else:
                         response = self.safe_get(current_url)
                         if not response:
@@ -1043,8 +810,6 @@ class AggressiveVulnCrawler:
                         final_url = response.url
                         status_code = response.status_code
                         content_type = response.headers.get('content-type', '')
-                        response_headers = dict(response.headers)
-                        cookies = SecurityAnalyzer.analyze_cookies(response)
                     
                     # Check for content duplication
                     is_duplicate, content_hash = self.is_content_duplicate(current_url, html)
@@ -1054,48 +819,17 @@ class AggressiveVulnCrawler:
                             print(f"[!] Duplicate content detected")
                         continue
                     
-                    # Analyze security and technology
-                    tech_stack = SecurityAnalyzer.detect_technology_stack(html, response_headers)
-                    security_headers = SecurityAnalyzer.analyze_security_headers(response_headers)
-                    js_frameworks = SecurityAnalyzer.detect_javascript_frameworks(html)
-                    external_resources = SecurityAnalyzer.extract_external_resources(html, current_url)
-                    
-                    # Enhanced forms with security analysis
-                    enhanced_forms = []
-                    for form in forms:
-                        enhanced_form = SecurityAnalyzer.assess_form_security(form, html)
-                        enhanced_forms.append(enhanced_form)
-                    
                     page_data = {
                         'url': current_url,
                         'final_url': final_url,
-                        'http_method': 'GET',
+                        'forms': forms,
                         'status_code': status_code,
                         'content_type': content_type,
-                        'response_headers': response_headers,
-                        'technology_stack': tech_stack,
-                        'security_headers': security_headers,
-                        'forms': enhanced_forms,
-                        'cookies': cookies,
-                        'javascript_frameworks': js_frameworks,
-                        'external_resources': external_resources,
                         'content_hash': content_hash,
                         'has_forms': len(forms) > 0,
                         'discovery_method': 'hard_link',
                         'phase': 1
                     }
-                    
-                    # Add vulnerability analysis
-                    page_data['potential_vulnerabilities'] = SecurityAnalyzer.identify_potential_vulnerabilities(page_data)
-                    page_data['attack_surface_score'] = SecurityAnalyzer.calculate_attack_surface_score(page_data)
-                    
-                    # Determine scanner priority
-                    if page_data['attack_surface_score'] >= 7.0:
-                        page_data['scanner_priority'] = "high"
-                    elif page_data['attack_surface_score'] >= 4.0:
-                        page_data['scanner_priority'] = "medium"
-                    else:
-                        page_data['scanner_priority'] = "low"
                     
                     hard_links_pages.append(page_data)
                     pages_crawled += 1
@@ -1203,9 +937,6 @@ class AggressiveVulnCrawler:
                 
                 try:
                     # Quick HEAD/GET check first
-                    response_headers = {}
-                    cookies = []
-                    
                     if self.use_selenium and self.driver:
                         try:
                             self.driver.get(url)
@@ -1224,8 +955,6 @@ class AggressiveVulnCrawler:
                         final_url = response.url
                         html = response.text
                         content_type = response.headers.get('content-type', '')
-                        response_headers = dict(response.headers)
-                        cookies = SecurityAnalyzer.analyze_cookies(response)
                     
                     # Skip obvious 404s or redirect loops
                     if status_code in [404, 410] or self.is_404_content(html):
@@ -1244,48 +973,17 @@ class AggressiveVulnCrawler:
                     
                     forms = self.extract_forms(html) if not self.use_selenium else self.extract_forms_selenium(url)
                     
-                    # Analyze security and technology
-                    tech_stack = SecurityAnalyzer.detect_technology_stack(html, response_headers)
-                    security_headers = SecurityAnalyzer.analyze_security_headers(response_headers)
-                    js_frameworks = SecurityAnalyzer.detect_javascript_frameworks(html)
-                    external_resources = SecurityAnalyzer.extract_external_resources(html, url)
-                    
-                    # Enhanced forms with security analysis
-                    enhanced_forms = []
-                    for form in forms:
-                        enhanced_form = SecurityAnalyzer.assess_form_security(form, html)
-                        enhanced_forms.append(enhanced_form)
-                    
                     page_data = {
                         'url': url,
                         'final_url': final_url,
-                        'http_method': 'GET',
+                        'forms': forms,
                         'status_code': status_code,
                         'content_type': content_type,
-                        'response_headers': response_headers,
-                        'technology_stack': tech_stack,
-                        'security_headers': security_headers,
-                        'forms': enhanced_forms,
-                        'cookies': cookies,
-                        'javascript_frameworks': js_frameworks,
-                        'external_resources': external_resources,
                         'content_hash': content_hash,
                         'has_forms': len(forms) > 0,
                         'discovery_method': 'speculative_probe',
                         'phase': 2
                     }
-                    
-                    # Add vulnerability analysis
-                    page_data['potential_vulnerabilities'] = SecurityAnalyzer.identify_potential_vulnerabilities(page_data)
-                    page_data['attack_surface_score'] = SecurityAnalyzer.calculate_attack_surface_score(page_data)
-                    
-                    # Determine scanner priority
-                    if page_data['attack_surface_score'] >= 7.0:
-                        page_data['scanner_priority'] = "high"
-                    elif page_data['attack_surface_score'] >= 4.0:
-                        page_data['scanner_priority'] = "medium"
-                    else:
-                        page_data['scanner_priority'] = "low"
                     
                     speculative_pages.append(page_data)
                     probed_count += 1
@@ -1585,7 +1283,6 @@ class AggressiveVulnCrawler:
         self.url_patterns.add(pattern)
         return False
     
-    # ...existing code...
 # Backward compatibility functions
 def crawl(start_url: str, max_pages: int = 50) -> List[Dict]:
     """Enhanced crawl function with aggressive capabilities"""
@@ -1600,12 +1297,11 @@ def crawl(start_url: str, max_pages: int = 50) -> List[Dict]:
     for page in pages_with_forms:
         old_forms = []
         for form in page['forms']:
-            old_form = {
-                'action': form.get('action', ''),
-                'method': form.get('method', 'GET'),
-                'inputs': form.get('inputs', [])
-            }
-            old_forms.append(old_form)
+            old_forms.append({
+                'action': form['action'],
+                'method': form['method'],
+                'inputs': form['input_names']
+            })
         
         compatible_format.append({
             'url': page['url'],
@@ -1614,118 +1310,12 @@ def crawl(start_url: str, max_pages: int = 50) -> List[Dict]:
     
     return compatible_format
 
-def generate_scanner_targets(endpoints: List[Dict], base_url: str) -> Dict:
-    """Generate targets for external security scanners"""
-    parsed_base = urlparse(base_url)
-    host = parsed_base.netloc
-    
-    # Common ports to check
-    ports = [80, 443]
-    if parsed_base.port:
-        ports.append(parsed_base.port)
-    
-    # Generate Nikto targets (unique base paths)
-    nikto_targets = set()
-    nikto_targets.add(f"{parsed_base.scheme}://{host}/")
-    
-    for endpoint in endpoints:
-        parsed_url = urlparse(endpoint['url'])
-        path_parts = parsed_url.path.split('/')
-        if len(path_parts) > 1:
-            base_path = '/' + path_parts[1] + '/'
-            nikto_targets.add(f"{parsed_base.scheme}://{host}{base_path}")
-    
-    # Generate ZAP targets (forms for active scanning)
-    zap_targets = []
-    for endpoint in endpoints:
-        if endpoint.get('forms'):
-            for form in endpoint['forms']:
-                form_data = {}
-                for input_field in form.get('inputs', []):
-                    # Generate sample data based on input type
-                    if input_field['type'] == 'email':
-                        form_data[input_field['name']] = "test@example.com"
-                    elif input_field['type'] == 'password':
-                        form_data[input_field['name']] = "test123"
-                    else:
-                        form_data[input_field['name']] = "test_value"
-                
-                zap_targets.append({
-                    "url": endpoint['url'],
-                    "scan_type": "active",
-                    "form_data": form_data
-                })
-    
-    return {
-        "nmap_targets": [
-            {
-                "host": host,
-                "ports": ports,
-                "service_detection": True
-            }
-        ],
-        "nikto_targets": list(nikto_targets),
-        "zap_targets": zap_targets
-    }
-
-def create_security_scan_report(endpoints: List[Dict], base_url: str, scan_id: str = None) -> Dict:
-    """Create a comprehensive security scan report in the new format"""
-    if not scan_id:
-        scan_id = str(uuid.uuid4())
-    
-    # Calculate summary statistics
-    total_endpoints = len(endpoints)
-    endpoints_with_forms = len([e for e in endpoints if e.get('has_forms')])
-    high_priority_targets = len([e for e in endpoints if e.get('scanner_priority') == 'high'])
-    
-    # Technology fingerprinting
-    web_servers = set()
-    frameworks = set()
-    databases = set()
-    
-    for endpoint in endpoints:
-        tech_stack = endpoint.get('technology_stack', {})
-        if tech_stack.get('web_server'):
-            web_servers.add(tech_stack['web_server'])
-        if tech_stack.get('framework'):
-            frameworks.add(tech_stack['framework'])
-        if tech_stack.get('frontend'):
-            frameworks.add(tech_stack['frontend'])
-        
-        # Look for database references in content or headers
-        # This is a simplified detection - could be enhanced
-        content_indicators = ['postgres', 'mysql', 'mongodb', 'redis']
-        for indicator in content_indicators:
-            # This would need actual content analysis
-            pass
-    
-    return {
-        "scan_target": {
-            "base_url": base_url,
-            "scan_timestamp": datetime.now().replace(microsecond=0).isoformat() + "Z",
-            "crawler_version": "2.0",
-            "scan_id": scan_id
-        },
-        "discovered_endpoints": endpoints,
-        "scan_summary": {
-            "total_endpoints": total_endpoints,
-            "endpoints_with_forms": endpoints_with_forms,
-            "high_priority_targets": high_priority_targets,
-            "technology_fingerprint": {
-                "web_servers": list(web_servers),
-                "frameworks": list(frameworks),
-                "databases": ["detected_postgres_references"] if any("postgres" in str(e).lower() for e in endpoints) else []
-            }
-        },
-        "scanner_targets": generate_scanner_targets(endpoints, base_url)
-    }
-
 @app.command()
 def run(
     url: str = typer.Argument(..., help="Starting URL"),
     max_pages: int = typer.Option(100, help="Max number of pages to crawl"),
     delay: float = typer.Option(0.3, help="Delay between requests (seconds)"),
-    save: str = typer.Option(None, help="Filename to save results (auto-timestamped if not provided)"),
+    save: str = typer.Option(None, help="Path to save results as JSON"),
     include_all: bool = typer.Option(False, help="Include pages without forms in results"),
     no_selenium: bool = typer.Option(False, help="Disable Selenium (requests only)"),
     aggressive: bool = typer.Option(False, help="Enable aggressive mode (bypass some protections)"),
@@ -1758,89 +1348,26 @@ def run(
     )
     results = crawler.crawl(url)
     
-    # Generate output filename and ensure crawl_results folder exists
-    if not save:
-        # Generate timestamped filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save = f"vuln_scan_{timestamp}.json"
-    
-    # Ensure the filename doesn't have an extension conflict
-    if not save.endswith('.json'):
-        save = f"{save}.json"
-    
-    # Create crawl_results folder if it doesn't exist
-    output_dir = "crawl_results"
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Combine path with crawl_results folder
-    save_path = os.path.join(output_dir, save)
-    
     # Filter results
     if not include_all:
         results = [page for page in results if page['has_forms']]
     
-    # Create the new security scan report format
-    scan_report = create_security_scan_report(results, url)
-    
-    # Display summary results
+    # Display results
     print(f"\n{'='*60}")
     print("SECURITY CRAWL RESULTS")
     print(f"{'='*60}")
-    print(f"Scan ID: {scan_report['scan_target']['scan_id']}")
-    print(f"Total Endpoints: {scan_report['scan_summary']['total_endpoints']}")
-    print(f"Endpoints with Forms: {scan_report['scan_summary']['endpoints_with_forms']}")
-    print(f"High Priority Targets: {scan_report['scan_summary']['high_priority_targets']}")
     
-    for i, endpoint in enumerate(scan_report['discovered_endpoints'], 1):
-        print(f"\n{i}. URL: {endpoint['url']}")
-        if endpoint.get('final_url') != endpoint['url']:
-            print(f"   Final URL: {endpoint['final_url']}")
-        print(f"   Status: {endpoint['status_code']}")
-        print(f"   Priority: {endpoint.get('scanner_priority', 'unknown')}")
-        print(f"   Attack Surface Score: {endpoint.get('attack_surface_score', 0):.1f}")
+    for i, page in enumerate(results, 1):
+        print(f"\n{i}. URL: {page['url']}")
+        if page.get('final_url') != page['url']:
+            print(f"   Final URL: {page['final_url']}")
+        print(f"   Status: {page['status_code']}")
         
-        if endpoint['forms']:
-            print(f"   Forms found: {len(endpoint['forms'])}")
-            for j, form in enumerate(endpoint['forms'], 1):
-                print(f"     Form {j}: {form['method']} -> {form['action'] or 'same page'}")
+        if page['forms']:
+            print(f"   Forms found: {len(page['forms'])}")
+            for j, form in enumerate(page['forms'], 1):
+                print(f"     Form {j}: {form['method'].upper()} -> {form['action'] or 'same page'}")
                 print(f"              Inputs: {[inp['name'] for inp in form['inputs']]}")
-                
-                # Show security issues
-                vuln_indicators = form.get('vulnerability_indicators', {})
-                issues = [k for k, v in vuln_indicators.items() if v]
-                if issues:
-                    print(f"              Security Issues: {', '.join(issues)}")
-        
-        # Show technology stack
-        tech_stack = endpoint.get('technology_stack', {})
-        tech_info = []
-        for key, value in tech_stack.items():
-            if value:
-                tech_info.append(f"{key}: {value}")
-        if tech_info:
-            print(f"   Technology: {', '.join(tech_info)}")
-    
-    # Show technology fingerprint
-    tech_fingerprint = scan_report['scan_summary']['technology_fingerprint']
-    if any(tech_fingerprint.values()):
-        print(f"\n{'='*60}")
-        print("TECHNOLOGY FINGERPRINT")
-        print(f"{'='*60}")
-        if tech_fingerprint['web_servers']:
-            print(f"Web Servers: {', '.join(tech_fingerprint['web_servers'])}")
-        if tech_fingerprint['frameworks']:
-            print(f"Frameworks: {', '.join(tech_fingerprint['frameworks'])}")
-        if tech_fingerprint['databases']:
-            print(f"Databases: {', '.join(tech_fingerprint['databases'])}")
-    
-    # Show scanner targets
-    print(f"\n{'='*60}")
-    print("SCANNER TARGETS")
-    print(f"{'='*60}")
-    scanner_targets = scan_report['scanner_targets']
-    print(f"Nmap targets: {len(scanner_targets['nmap_targets'])}")
-    print(f"Nikto targets: {len(scanner_targets['nikto_targets'])}")
-    print(f"ZAP targets: {len(scanner_targets['zap_targets'])}")
     
     # Show deduplication statistics
     if crawler.duplicate_urls:
@@ -1862,11 +1389,23 @@ def run(
             for dup_url in duplicates:
                 print(f"  -> {dup_url}")
     
-    # Always save the results (now with auto-generated filename)
-    with open(save_path, 'w') as f:
-        json.dump(scan_report, f, indent=2)
-    print(f"\n[+] Security scan report saved to {save_path}")
-    print(f"[+] Report contains {len(scan_report['discovered_endpoints'])} endpoints")
+    if save:
+        # Include deduplication data in saved results
+        save_data = {
+            'unique_pages': results,
+            'duplicate_urls': crawler.duplicate_urls,
+            'crawl_stats': {
+                'total_visited': len(crawler.visited),
+                'unique_pages': len(results),
+                'duplicate_count': len(crawler.duplicate_urls),
+                'pages_with_forms': len([p for p in results if p['has_forms']]),
+                'total_forms': sum(len(p['forms']) for p in results if p['has_forms'])
+            }
+        }
+        
+        with open(save, 'w') as f:
+            json.dump(save_data, f, indent=2)
+        print(f"\n[+] Results saved to {save}")
 
 if __name__ == "__main__":
     app()
