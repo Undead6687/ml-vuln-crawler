@@ -206,13 +206,56 @@ class EnhancedVulnerabilityScanner:
                     print(f"[+] ZAP found running at: {zap_url}")
                 else:
                     print(f"[!] ZAP not responding at: {zap_url}")
+                    # Try to start ZAP automatically
+                    self._auto_start_zap()
             except:
                 available['zap'] = False
-                print(f"[!] ZAP not running - start ZAP daemon first")
+                print(f"[!] ZAP not running - attempting to start ZAP automatically...")
+                # Try to start ZAP automatically
+                self._auto_start_zap()
         else:
             available['zap'] = False
         
         return available
+
+    def _auto_start_zap(self):
+        """Automatically start ZAP in a new terminal if start_zap.bat exists"""
+        try:
+            zap_start_script = "start_zap.bat"
+            if os.path.exists(zap_start_script):
+                print(f"[*] Found {zap_start_script} - starting ZAP in new terminal...")
+                
+                # Start ZAP in a new terminal window (Windows)
+                if platform.system() == 'Windows':
+                    subprocess.Popen([
+                        'cmd', '/c', 'start', 'cmd', '/k', zap_start_script
+                    ], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    print(f"[+] ZAP starting in new terminal - please wait 30-60 seconds for ZAP to initialize")
+                    print(f"[+] You can continue with the scan - ZAP will be checked again when needed")
+                else:
+                    # For Linux/Mac - open in new terminal
+                    subprocess.Popen(['gnome-terminal', '--', 'bash', '-c', f'./{zap_start_script}; read'])
+                    print(f"[+] ZAP starting in new terminal - please wait for ZAP to initialize")
+                
+                # Give ZAP a moment to start
+                time.sleep(2)
+                
+            else:
+                print(f"[!] {zap_start_script} not found in current directory")
+                print(f"[!] Please start ZAP manually or ensure {zap_start_script} exists")
+                
+        except Exception as e:
+            print(f"[!] Failed to auto-start ZAP: {e}")
+            print(f"[!] Please start ZAP manually using start_zap.bat")
+
+    def _check_zap_running(self) -> bool:
+        """Check if ZAP is currently running and accessible"""
+        try:
+            zap_url = f"http://{self.config['zap']['host']}:{self.config['zap']['port']}"
+            response = requests.get(f"{zap_url}/JSON/core/view/version/", timeout=5)
+            return response.status_code == 200
+        except:
+            return False
 
     def initialize_crawler(self, max_pages: int = 100, delay: float = 0.3, 
                           use_selenium: bool = True, aggressive: bool = False,
@@ -672,6 +715,20 @@ class EnhancedVulnerabilityScanner:
             'scan_metadata': {},
             'errors': []
         }
+        
+        # Check if ZAP is running before starting scan
+        if not self._check_zap_running():
+            print(f"[!] ZAP is not running - attempting to start ZAP...")
+            self._auto_start_zap()
+            print(f"[*] Waiting 30 seconds for ZAP to initialize...")
+            time.sleep(30)
+            
+            # Check again after starting
+            if not self._check_zap_running():
+                error_msg = "ZAP failed to start or is not accessible"
+                zap_results['errors'].append(error_msg)
+                print(f"[!] {error_msg}")
+                return zap_results
         
         print(f"[ZAP] Scanning {len(zap_targets)} web targets...")
         
