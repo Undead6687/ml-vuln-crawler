@@ -11,6 +11,7 @@ import requests
 import hashlib
 import warnings
 import logging
+import platform
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Set
 from datetime import datetime
@@ -126,7 +127,7 @@ class EnhancedVulnerabilityScanner:
             'nmap': {
                 'enabled': True,
                 'path': 'nmap',
-                'timeout': 800,  # Increased from 300 to 800 seconds
+                'timeout': 1000,  # Increased to 1000 seconds for comprehensive scans
                 'timing': 'T3',
                 'scripts': True
             },
@@ -134,8 +135,8 @@ class EnhancedVulnerabilityScanner:
                 'enabled': True,
                 'path': 'perl',
                 'nikto_script': './nikto-master/program/nikto.pl',
-                'timeout': 600,
-                'max_scan_time': 600
+                'timeout': 800,
+                'max_scan_time': 800
             },
             'zap': {
                 'enabled': True,
@@ -348,15 +349,25 @@ class EnhancedVulnerabilityScanner:
                 with tempfile.NamedTemporaryFile(suffix='.xml', delete=False) as temp_file:
                     temp_path = temp_file.name
                 
-                cmd = [
-                    'nmap',
-                    '-sV', '-sC', '--script', 'vuln',
-                    *port_args,
-                    '-oX', temp_path, host
-                ]
+                # Platform-specific nmap commands for better Windows compatibility
+                if platform.system() == 'Windows':
+                    cmd = [
+                        'nmap',
+                        '-sS', '-sV', '--script', 'vuln',  # Use your working manual command
+                        '-p-',  # Scan all ports like your manual command
+                        '-oX', temp_path, host
+                    ]
+                else:
+                    cmd = [
+                        'nmap',
+                        '-sV', '-sC', '--script', 'vuln',  # Full scripts on Linux/Mac
+                        *port_args,
+                        '-oX', temp_path, host
+                    ]
                 
                 result = subprocess.run(cmd, capture_output=True, text=True,
-                                      timeout=self.config['nmap']['timeout'])
+                                      timeout=self.config['nmap']['timeout'],
+                                      shell=True)
                 
                 if result.returncode == 0:
                     vulnerabilities = self.parse_nmap_xml(temp_path, host)
