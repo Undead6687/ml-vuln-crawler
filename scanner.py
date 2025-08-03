@@ -101,6 +101,7 @@ class EnhancedVulnerabilityScanner:
     """Enhanced vulnerability scanner with full crawler integration and real-time feedback"""
     
     def __init__(self, config_file: str = "config.yaml"):
+        self.config_file = config_file  # Store config file path for ML enhancement
         self.config = self.load_config(config_file)
         self.scan_id = str(uuid.uuid4())
         self.results_dir = Path("vuln-scanner-results")
@@ -940,7 +941,8 @@ class EnhancedVulnerabilityScanner:
             'total_scan_time': sum(sr.get('scan_duration', 0) for sr in scan_results.values())
         }
         
-        return final_report
+        # Apply ML enhancement before returning
+        return self.apply_ml_enhancement(final_report)
     
     def map_crawler_severity(self, vuln_type: str, issue: str) -> str:
         """Map crawler findings to severity levels"""
@@ -1075,6 +1077,33 @@ class EnhancedVulnerabilityScanner:
         
         print(f"[+] Crawl results saved to {filepath}")
         return str(filepath)
+    
+    def apply_ml_enhancement(self, final_report: Dict) -> Dict:
+        """Apply ML enhancement to scan results"""
+        try:
+            from ml_handler import MLVulnerabilityHandler
+            
+            print(f"\n🤖 [ML ENHANCEMENT] Analyzing vulnerabilities with trained model...")
+            
+            ml_handler = MLVulnerabilityHandler(self.config_file)
+            enhanced_report = ml_handler.enhance_vulnerability_analysis(final_report)
+            
+            # Update vulnerability counts if ML made changes
+            ml_summary = enhanced_report.get('ml_summary', {})
+            if ml_summary.get('ml_analysis_available'):
+                print(f"🤖 [ML] Analyzed {ml_summary['vulnerabilities_analyzed']} vulnerabilities")
+                print(f"🤖 [ML] Average confidence: {ml_summary['average_confidence']:.2f}")
+                print(f"🤖 [ML] High confidence predictions: {ml_summary['high_confidence_predictions']}")
+                print(f"🤖 [ML] Severity adjustments: {ml_summary['severity_adjustments']}")
+            
+            return enhanced_report
+            
+        except ImportError:
+            print(f"[!] ml_handler.py not available, skipping ML enhancement")
+            return final_report
+        except Exception as e:
+            print(f"[!] ML enhancement failed: {e}")
+            return final_report
 
 # CLI Commands with ALL crawler.py functionality
 @app.command()
@@ -1211,6 +1240,200 @@ def check():
         print(f"{scanner_name.upper():8} | {status:12} | {enabled}")
     
     print(f"\nResults will be saved to: vuln-scanner-results/")
+
+@app.command()
+def train_ml():
+    """Train ML model for vulnerability classification using CVE data"""
+    try:
+        from ml_handler import MLVulnerabilityHandler
+        
+        print("🤖 ML Model Training")
+        print("=" * 50)
+        
+        # Initialize ML handler
+        ml_handler = MLVulnerabilityHandler()
+        
+        # Check status
+        status = ml_handler.get_model_status()
+        print(f"📁 CVE Data Path: {status['cve_data_path']}")
+        print(f"📅 Available Years: {status['available_cve_years']}")
+        print(f"📊 Model Files Exist: {status['model_files_exist']}")
+        
+        if not status['available_cve_years']:
+            print("❌ No CVE data available. Please ensure CVE files are in the correct directory structure.")
+            print("   Expected structure: ./cves/2023/CVE-2023-*.json")
+            print("                      ./cves/2024/CVE-2024-*.json")
+            return
+        
+        # Step 1: Collect and process CVE data
+        print(f"\n[1/4] Collecting CVE data...")
+        if not ml_handler.collect_and_process_cve_data():
+            print("❌ Failed to collect CVE data")
+            return
+        
+        # Step 2: Prepare training data
+        print(f"\n[2/4] Preparing training data...")
+        if not ml_handler.prepare_training_data():
+            print("❌ Failed to prepare training data")
+            return
+        
+        # Step 3: Train model
+        print(f"\n[3/4] Training vulnerability classifier...")
+        if not ml_handler.train_vulnerability_classifier():
+            print("❌ Failed to train model")
+            return
+        
+        # Step 4: Save model
+        print(f"\n[4/4] Saving trained model...")
+        if ml_handler.save_trained_model():
+            print("✅ ML model training completed successfully!")
+            print(f"📁 Model saved in: {ml_handler.models_path}")
+            
+            # Display final status
+            final_status = ml_handler.get_model_status()
+            if 'model_info' in final_status:
+                info = final_status['model_info']
+                print(f"\n📊 Model Information:")
+                print(f"   • Training Date: {info['training_date']}")
+                print(f"   • Test Accuracy: {info['test_accuracy']:.3f}")
+                print(f"   • Training Samples: {info['training_samples']:,}")
+                print(f"   • CVE Sources: {', '.join(info['cve_sources'])}")
+        else:
+            print("❌ Failed to save model")
+            
+    except ImportError:
+        print("❌ ML dependencies not available. Install with:")
+        print("   pip install scikit-learn pandas numpy")
+    except KeyboardInterrupt:
+        print(f"\n⚠️ Training interrupted by user")
+    except Exception as e:
+        print(f"❌ Training failed: {e}")
+
+@app.command()
+def train_gpu(
+    dataset_limit: int = typer.Option(None, help="Limit dataset size for faster GPU training"),
+    force: bool = typer.Option(False, help="Force GPU training even if GPU not available")
+):
+    """🚀 Train ML model using GPU acceleration for faster performance"""
+    try:
+        from ml_handler import MLVulnerabilityHandler
+        
+        print("🚀 GPU-Accelerated ML Model Training")
+        print("=" * 60)
+        
+        # Initialize ML handler
+        ml_handler = MLVulnerabilityHandler()
+        
+        # Check GPU availability
+        try:
+            import torch
+            gpu_available = torch.cuda.is_available()
+            if gpu_available:
+                gpu_name = torch.cuda.get_device_name(0)
+                print(f"🎯 GPU Detected: {gpu_name}")
+                print(f"🔥 CUDA Version: {torch.version.cuda}")
+            else:
+                print("⚠️  No GPU detected - will use CPU fallback")
+                if not force:
+                    print("💡 Use --force to train on CPU anyway")
+                    return
+        except ImportError:
+            print("❌ PyTorch not installed - GPU training unavailable")
+            print("📦 Install with: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118")
+            return
+        
+        # Check CVE data status
+        status = ml_handler.get_model_status()
+        print(f"\n📁 CVE Data Path: {status['cve_data_path']}")
+        print(f"📅 Available Years: {status['available_cve_years']}")
+        
+        if not status['available_cve_years']:
+            print("❌ No CVE data available. Please ensure CVE files are in the correct directory structure.")
+            return
+        
+        if dataset_limit:
+            print(f"📊 Dataset limited to: {dataset_limit:,} samples")
+        
+        # Step 1: Collect and process CVE data
+        print(f"\n[1/4] 📥 Collecting CVE data...")
+        if not ml_handler.collect_and_process_cve_data():
+            print("❌ Failed to collect CVE data")
+            return
+        
+        # Step 2: Prepare training data
+        print(f"\n[2/4] 🔧 Preparing training data...")
+        if not ml_handler.prepare_training_data():
+            print("❌ Failed to prepare training data")
+            return
+        
+        # Step 3: Train GPU model
+        print(f"\n[3/4] 🧠 Training GPU neural network...")
+        if not ml_handler.train_gpu_accelerated_classifier(dataset_size_limit=dataset_limit):
+            print("❌ GPU training failed - trying CPU fallback...")
+            if not ml_handler.train_vulnerability_classifier():
+                print("❌ CPU training also failed")
+                return
+        
+        # Step 4: Save model
+        print(f"\n[4/4] 💾 Saving trained model...")
+        if ml_handler.save_trained_model():
+            print("✅ GPU model training completed successfully!")
+            print(f"📁 Model saved in: {ml_handler.models_path}")
+            
+            # Display final status
+            final_status = ml_handler.get_model_status()
+            if 'model_info' in final_status:
+                info = final_status['model_info']
+                print(f"\n📊 Model Information:")
+                print(f"   • Model Type: {info.get('model_type', 'GPU Neural Network')}")
+                print(f"   • Training Date: {info['training_date']}")
+                print(f"   • Test Accuracy: {info['test_accuracy']:.3f}")
+                print(f"   • Training Samples: {info['training_samples']:,}")
+                print(f"   • CVE Sources: {', '.join(info['cve_sources'])}")
+        else:
+            print("❌ Failed to save model")
+            
+    except ImportError:
+        print("❌ ML dependencies not available. Install with:")
+        print("   pip install scikit-learn pandas numpy torch")
+    except KeyboardInterrupt:
+        print(f"\n⚠️ GPU training interrupted by user")
+    except Exception as e:
+        print(f"❌ GPU training failed: {e}")
+
+@app.command()
+def ml_status():
+    """Check ML model status and CVE data availability"""
+    try:
+        from ml_handler import MLVulnerabilityHandler
+        
+        print("🤖 ML System Status")
+        print("=" * 40)
+        
+        ml_handler = MLVulnerabilityHandler()
+        status = ml_handler.get_model_status()
+        
+        print(f"📁 CVE Data Path: {status['cve_data_path']}")
+        print(f"📅 Available CVE Years: {status['available_cve_years']}")
+        print(f"📊 Processed Data Exists: {'✓' if status['processed_data_exists'] else '✗'}")
+        print(f"🤖 Model Files Exist: {'✓' if status['model_files_exist'] else '✗'}")
+        print(f"🔄 Model Loaded: {'✓' if status['model_loaded'] else '✗'}")
+        
+        if 'model_info' in status:
+            info = status['model_info']
+            print(f"\n📊 Model Information:")
+            print(f"   • Training Date: {info['training_date']}")
+            print(f"   • Test Accuracy: {info['test_accuracy']:.3f}")
+            print(f"   • Training Samples: {info['training_samples']:,}")
+            print(f"   • CVE Sources: {', '.join(info['cve_sources'])}")
+        else:
+            print(f"\n⚠️ No trained model available. Run: python scanner.py train-ml")
+            
+    except ImportError:
+        print("❌ ML dependencies not available. Install with:")
+        print("   pip install scikit-learn pandas numpy")
+    except Exception as e:
+        print(f"❌ Error checking ML status: {e}")
 
 if __name__ == "__main__":
     app()
