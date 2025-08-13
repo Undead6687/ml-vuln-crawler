@@ -1,3 +1,22 @@
+"""
+Web Vulnerability Crawler
+A comprehensive web application security testing tool with SPA support.
+
+Author: MohammedMiran J. Shaikh
+Project: ML-Powered Vulnerability Detection Framework
+Institution: Master's in Cyber Security
+Description: Dynamic web crawler for security testing with JavaScript rendering,
+             aggressive discovery modes, and comprehensive form detection.
+
+Features:
+- Single Page Application (SPA) support via Selenium WebDriver
+- Robots.txt bypassing for security testing
+- Content deduplication to reduce noise
+- User agent rotation for stealth crawling
+- Advanced form and input detection
+- AJAX/JavaScript-rendered content discovery
+"""
+
 # crawler.py - Security-focused SPA-aware web crawler
 import requests
 from bs4 import BeautifulSoup
@@ -33,6 +52,30 @@ logging.getLogger('webdriver_manager').setLevel(logging.ERROR)
 app = typer.Typer()
 
 class AggressiveVulnCrawler:
+    """
+    Web application security crawler with SPA support and aggressive discovery.
+    
+    A comprehensive web crawler designed for security testing that can handle
+    modern JavaScript applications, bypass basic protections, and discover
+    attack surfaces through form detection and parameter analysis.
+    
+    Attributes:
+        max_pages: Maximum number of pages to crawl
+        delay: Delay between requests in seconds
+        timeout: Request timeout in seconds
+        use_selenium: Enable JavaScript rendering with Selenium
+        aggressive: Enable bypass of robots.txt and other protections
+        ignore_robots: Specifically ignore robots.txt restrictions
+        enable_dedup: Enable content deduplication to reduce noise
+        
+    Features:
+        - JavaScript-rendered content discovery
+        - SPA hash-based routing support
+        - Content deduplication
+        - User agent rotation
+        - Form and parameter detection
+        - AJAX endpoint discovery
+    """
     def __init__(self, max_pages=100, delay=0.3, timeout=10, use_selenium=True, aggressive=False, ignore_robots=False, enable_dedup=True):
         self.max_pages = max_pages
         self.delay = delay
@@ -78,7 +121,12 @@ class AggressiveVulnCrawler:
             self.setup_selenium()
     
     def setup_session(self):
-        """Setup requests session with aggressive settings"""
+        """
+        Configure HTTP session with security testing headers.
+        
+        Sets up user agent rotation, standard web browser headers,
+        and optional SSL verification bypassing for aggressive mode.
+        """
         import random
         self.session.headers.update({
             'User-Agent': random.choice(self.user_agents),
@@ -95,7 +143,12 @@ class AggressiveVulnCrawler:
             requests.packages.urllib3.disable_warnings()
     
     def setup_selenium(self):
-        """Setup Selenium WebDriver with stealth options"""
+        """
+        Initialize Selenium WebDriver for JavaScript rendering.
+        
+        Configures Chrome WebDriver with stealth options to avoid detection,
+        disable security features for testing, and handle SPA content.
+        """
         try:
             chrome_options = Options()
             
@@ -150,7 +203,19 @@ class AggressiveVulnCrawler:
         return normalized
     
     def detect_spa_mode(self, url: str) -> bool:
-        """Detect if the URL indicates SPA hash-based routing"""
+        """
+        Detect Single Page Application hash-based routing.
+        
+        Analyzes URL structure to determine if the application uses
+        hash-based routing (e.g., domain.com/#/page) which indicates
+        a SPA architecture requiring special handling.
+        
+        Args:
+            url: URL to analyze for SPA patterns
+            
+        Returns:
+            bool: True if SPA hash routing detected
+        """
         parsed = urlparse(url)
         # Check if URL has hash fragment that looks like a route
         if parsed.fragment and parsed.fragment.startswith('/'):
@@ -396,7 +461,18 @@ class AggressiveVulnCrawler:
             return set()
     
     def extract_forms_selenium(self, url: str) -> List[Dict]:
-        """Extract forms using Selenium with modern framework support"""
+        """
+        Extract forms using Selenium with JavaScript framework support.
+        
+        Detects both traditional HTML forms and modern JavaScript-based
+        form components, including dynamically generated forms in SPAs.
+        
+        Args:
+            url: URL to extract forms from
+            
+        Returns:
+            List[Dict]: Detected forms with metadata
+        """
         try:
             # Store current URL path for form action detection
             self._current_url_path = urlparse(url).path
@@ -497,7 +573,18 @@ class AggressiveVulnCrawler:
             return self.extract_forms(self.driver.page_source if self.driver else "")
     
     def extract_forms(self, html: str) -> List[Dict]:
-        """Extract all forms from HTML, including modern framework components"""
+        """
+        Extract forms from static HTML with modern framework detection.
+        
+        Identifies traditional HTML forms and modern JavaScript component
+        patterns including React, Vue, and Angular form structures.
+        
+        Args:
+            html: Raw HTML content to analyze
+            
+        Returns:
+            List[Dict]: Detected forms with input fields and metadata
+        """
         try:
             soup = BeautifulSoup(html, 'html.parser')
             forms = []
@@ -712,7 +799,19 @@ class AggressiveVulnCrawler:
         return None
     
     def crawl(self, start_url: str) -> List[Dict]:
-        """Two-phase security crawling: hard links first, then speculative probing"""
+        """
+        Execute comprehensive security-focused web crawling.
+        
+        Performs two-phase crawling: first discovers hard links and forms,
+        then conducts speculative probing for hidden endpoints. Supports
+        JavaScript rendering and SPA detection.
+        
+        Args:
+            start_url: Target URL to begin crawling from
+            
+        Returns:
+            List[Dict]: Discovered pages with forms, links, and security metadata
+        """
         if not self.aggressive:
             print(f"[*] Starting two-phase security crawl from: {start_url}")
             print(f"[*] Selenium: {self.use_selenium} | Robots: {'IGNORED' if self.ignore_robots else 'RESPECTED'}")
@@ -1285,7 +1384,7 @@ class AggressiveVulnCrawler:
     
 # Backward compatibility functions
 def crawl(start_url: str, max_pages: int = 50) -> List[Dict]:
-    """Enhanced crawl function with aggressive capabilities"""
+    """Comprehensive crawl function with security-focused capabilities"""
     crawler = AggressiveVulnCrawler(max_pages=max_pages, delay=0.3, use_selenium=True, aggressive=True)
     all_pages = crawler.crawl(start_url)
     
@@ -1332,7 +1431,7 @@ def run(
     - Content deduplication to avoid duplicate pages
     - URL pattern detection to skip similar pages
     - Stealth user-agent rotation
-    - Enhanced form detection
+    - Form and parameter detection
     """
     if ignore_robots or aggressive:
         print("[!] Running in security testing mode")
